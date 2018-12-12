@@ -1,0 +1,44 @@
+python-transitions (0.6.7-2) UNRELEASED; urgency=medium
+
+  * Convert git repository from git-dpm to gbp layout
+
+ -- Ondřej Nový <onovy@debian.org>  Wed, 08 Aug 2018 09:10:53 +0200
+
+python-transitions (0.6.7-1) unstable; urgency=medium
+
+  [ Ondřej Nový ]
+  * d/control: Remove ancient X-Python-Version field
+  * d/control: Remove ancient X-Python3-Version field
+
+  [ Stein Magnus Jodal ]
+  * New upstream release
+
+ -- Stein Magnus Jodal <jodal@debian.org>  Fri, 25 May 2018 13:19:12 +0200
+
+python-transitions (0.6.5-1) unstable; urgency=medium
+
+  [ Ondřej Nový ]
+  * d/control: Set Vcs-* to salsa.debian.org
+  * d/copyright: Use https protocol in Format field
+
+  [ Stein Magnus Jodal ]
+  * New upstream release
+  * debian/control
+    - Bump Standards-Version to 4.1.4, no changes required
+    - Build-Depends on python{,3}-mock
+    - Build-Depends on python{,3}-pycodestyle
+  * debian/copyright
+    - Update copyright years
+  * debian/rules
+    - Run tests with nose
+    - Install upstream changelog
+  * debian/patches/
+    - Add patch to always decode README.md as UTF-8
+
+ -- Stein Magnus Jodal <jodal@debian.org>  Wed, 02 May 2018 00:53:18 +0200
+
+python-transitions (0.5.3-1) unstable; urgency=medium
+
+  * Initial release (closes: 869775)
+
+ -- Stein Magnus Jodal <jodal@debian.org>  Wed, 26 Jul 2017 12:04:22 +0200
