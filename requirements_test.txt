@@ -1,4 +1,8 @@
-nose
+pytest
+pytest-cov
+pytest-runner
+pytest-xdist
 mock
 dill
+graphviz
 pycodestyle

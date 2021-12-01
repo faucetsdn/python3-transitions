@@ -63,6 +63,19 @@ class PicklableLock(object):
         self.lock.__exit__(exc_type, exc_val, exc_tb)
 
 
+class IdentManager:
+
+    def __init__(self):
+        self.current = 0
+
+    def __enter__(self):
+        self.current = get_ident()
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.current = 0
+
+
 class LockedEvent(Event):
     """ An event type which uses the parent's machine context map when triggered. """
 
@@ -72,8 +85,8 @@ class LockedEvent(Event):
         # noinspection PyProtectedMember
         # LockedMachine._locked should not be called somewhere else. That's why it should not be exposed
         # to Machine users.
-        if self.machine._locked != get_ident():
-            with nested(*self.machine.model_context_map[model]):
+        if self.machine._ident.current != get_ident():
+            with nested(*self.machine.model_context_map[id(model)]):
                 return _super(LockedEvent, self).trigger(model, *args, **kwargs)
         else:
             return _super(LockedEvent, self).trigger(model, *args, **kwargs)
@@ -90,23 +103,40 @@ class LockedMachine(Machine):
     event_cls = LockedEvent
 
     def __init__(self, *args, **kwargs):
-        self._locked = 0
+        self._ident = IdentManager()
 
         try:
             self.machine_context = listify(kwargs.pop('machine_context'))
         except KeyError:
             self.machine_context = [PicklableLock()]
 
-        self.machine_context.append(self)
+        self.machine_context.append(self._ident)
         self.model_context_map = defaultdict(list)
 
         _super(LockedMachine, self).__init__(*args, **kwargs)
+
+    # When we attempt to pickle a locked machine, using IDs wont suffice to unpickle the contexts since
+    # IDs have changed. We use a 'reference' store with objects as dictionary keys to resolve the newly created
+    # references. This should induce no restrictions compared to transitions 0.8.8 but enable the usage of unhashable
+    # objects in locked machine.
+    def __getstate__(self):
+        state = {k: v for k, v in self.__dict__.items()}
+        del state['model_context_map']
+        state['_model_context_map_store'] = {mod: self.model_context_map[id(mod)] for mod in self.models}
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.model_context_map = defaultdict(list)
+        for model in self.models:
+            self.model_context_map[id(model)] = self._model_context_map_store[model]
+        del self._model_context_map_store
 
     def add_model(self, model, initial=None, model_context=None):
         """ Extends `transitions.core.Machine.add_model` by `model_context` keyword.
         Args:
             model (list or object): A model (list) to be managed by the machine.
-            initial (string or State): The initial state of the passed model[s].
+            initial (str, Enum or State): The initial state of the passed model[s].
             model_context (list or object): If passed, assign the context (list) to the machines
                 model specific context map.
         """
@@ -116,8 +146,8 @@ class LockedMachine(Machine):
 
         for mod in models:
             mod = self if mod == 'self' else mod
-            self.model_context_map[mod].extend(self.machine_context)
-            self.model_context_map[mod].extend(model_context)
+            self.model_context_map[id(mod)].extend(self.machine_context)
+            self.model_context_map[id(mod)].extend(model_context)
 
         return output
 
@@ -127,7 +157,7 @@ class LockedMachine(Machine):
         models = listify(model)
 
         for mod in models:
-            del self.model_context_map[mod]
+            del self.model_context_map[id(mod)]
 
         return _super(LockedMachine, self).remove_model(models)
 
@@ -148,22 +178,21 @@ class LockedMachine(Machine):
     # not been created by Machine.__getattr__.
     # https://github.com/tyarkoni/transitions/issues/214
     def _add_model_to_state(self, state, model):
-        _super(LockedMachine, self)._add_model_to_state(state, model)  # pylint: disable=protected-access
-        for prefix in ['enter', 'exit']:
-            callback = "on_{0}_".format(prefix) + state.name
+        super(LockedMachine, self)._add_model_to_state(state, model)  # pylint: disable=protected-access
+        for prefix in self.state_cls.dynamic_methods:
+            callback = "{0}_{1}".format(prefix, self._get_qualified_state_name(state))
             func = getattr(model, callback, None)
             if isinstance(func, partial) and func.func != state.add_callback:
-                state.add_callback(prefix, callback)
+                state.add_callback(prefix[3:], callback)
+
+    # this needs to be overridden by the HSM variant to resolve names correctly
+    @staticmethod
+    def _get_qualified_state_name(state):
+        return state.name
 
     def _locked_method(self, func, *args, **kwargs):
-        if self._locked != get_ident():
+        if self._ident.current != get_ident():
             with nested(*self.machine_context):
                 return func(*args, **kwargs)
         else:
             return func(*args, **kwargs)
-
-    def __enter__(self):
-        self._locked = get_ident()
-
-    def __exit__(self, *exc):
-        self._locked = 0

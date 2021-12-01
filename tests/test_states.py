@@ -1,10 +1,10 @@
 from transitions import Machine
 from transitions.extensions.states import *
-from transitions.extensions.factory import LockedHierarchicalGraphMachine
+from transitions.extensions import MachineFactory
 from time import sleep
 
 from unittest import TestCase
-from .test_graphing import TestDiagramsLockedNested
+from .test_graphviz import TestDiagramsLockedNested
 
 try:
     from unittest.mock import MagicMock
@@ -139,6 +139,20 @@ class TestTransitions(TestCase):
         self.assertEqual(timeout.call_count, 2)
         self.assertEqual(notification.call_count, 2)
 
+    def test_timeout_transitioning(self):
+        timeout_mock = MagicMock()
+
+        @add_state_features(Timeout)
+        class CustomMachine(Machine):
+            pass
+
+        states = ['A', {'name': 'B', 'timeout': 0.05, 'on_timeout': ['to_A', timeout_mock]}]
+        machine = CustomMachine(states=states, initial='A')
+        machine.to_B()
+        sleep(0.1)
+        self.assertTrue(machine.is_A())
+        self.assertTrue(timeout_mock.called)
+
     def test_volatile(self):
 
         class TemporalState(object):
@@ -179,9 +193,15 @@ class TestStatesDiagramsLockedNested(TestDiagramsLockedNested):
 
     def setUp(self):
 
+        machine_cls = MachineFactory.get_predefined(locked=True, nested=True, graph=True)
+
         @add_state_features(Error, Timeout, Volatile)
-        class CustomMachine(LockedHierarchicalGraphMachine):
+        class CustomMachine(machine_cls):
             pass
 
         super(TestStatesDiagramsLockedNested, self).setUp()
         self.machine_cls = CustomMachine
+
+    def test_nested_notebook(self):
+        # test will create a custom state machine already. This will cause errors when inherited.
+        self.assertTrue(True)
