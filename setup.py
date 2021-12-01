@@ -6,27 +6,27 @@ with open('transitions/version.py') as f:
     exec(f.read())
 
 with codecs.open('README.md', 'r', 'utf-8') as f:
+    import re
     # cut the badges from the description and also the TOC which is currently not working on PyPi
-    long_description = ''.join(f.readlines()[49:])
+    regex = r"([\s\S]*)## Quickstart"
+    readme = f.read()
 
-if len(set(('test', 'easy_install')).intersection(sys.argv)) > 0:
-    import setuptools
+    long_description = re.sub(regex, "## Quickstart", readme, 1)
+    assert long_description[:13] == '## Quickstart'  # Description should start with a headline (## Quickstart)
 
-tests_require = ['dill', 'pygraphviz']
+tests_require = ['mock', 'tox', 'graphviz', 'pygraphviz']
+
 extras_require = {'diagrams': ['pygraphviz']}
 
 extra_setuptools_args = {}
 if 'setuptools' in sys.modules:
-    extras_require['test'] = ['nose>=0.10.1']
-    tests_require.append('nose')
-    extra_setuptools_args = dict(
-        test_suite='nose.collector',
-    )
+    extras_require['test'] = ['pytest']
+    tests_require.append('pytest')
 
 setup(
     name="transitions",
     version=__version__,
-    description="A lightweight, object-oriented Python state machine implementation.",
+    description="A lightweight, object-oriented Python state machine implementation with many extensions.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author='Tal Yarkoni',
@@ -53,6 +53,8 @@ setup(
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
     ],
     **extra_setuptools_args
 )

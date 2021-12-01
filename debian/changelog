@@ -1,14 +1,111 @@
-python-transitions (0.6.9-1) UNRELEASED; urgency=medium
+python-transitions (0.8.9-1) unstable; urgency=medium
 
-  * New upstream release.
+  * New upstream version 0.8.9
 
- -- Brad Cowie <brad@faucet.nz>  Wed, 12 Dec 2018 13:35:53 +1300
+ -- Philipp Huebner <debalance@debian.org>  Tue, 07 Sep 2021 08:24:01 +0200
 
-python-transitions (0.6.7-2) UNRELEASED; urgency=medium
+python-transitions (0.8.6-1) unstable; urgency=medium
 
+  * New upstream version 0.8.6
+  * Added patch to fix code style errors causing FTBFS issues
+
+ -- Philipp Huebner <debalance@debian.org>  Tue, 29 Dec 2020 15:25:40 +0100
+
+python-transitions (0.8.5-2) unstable; urgency=medium
+
+  * Updated Standards-Version: 4.5.1 (no changes needed)
+  * Updated version of debian/watch: 4
+  * Added debian/source/lintian-overrides
+
+ -- Philipp Huebner <debalance@debian.org>  Mon, 28 Dec 2020 16:16:02 +0100
+
+python-transitions (0.8.5-1) unstable; urgency=medium
+
+  [ Ondřej Nový ]
+  * d/control: Update Maintainer field with new Debian Python Team
+    contact address.
+  * d/control: Update Vcs-* fields with new Debian Python Team Salsa
+    layout.
+
+  [ Stein Magnus Jodal ]
+  * Remove myself from Uploaders
+  * New upstream release
+
+ -- Stein Magnus Jodal <jodal@debian.org>  Fri, 04 Dec 2020 21:08:18 +0100
+
+python-transitions (0.8.2-1) unstable; urgency=medium
+
+  * Team Upload.
+  * New upstream version 0.8.2 (Closes: #963459)
+  * compat version: 13
+  * Add autopkgtests
+
+ -- Nilesh Patra <npatra974@gmail.com>  Sun, 05 Jul 2020 17:07:54 +0530
+
+python-transitions (0.8.1-1) unstable; urgency=medium
+
+  [ Stein Magnus Jodal ]
+  * Use debian/master as debian branch
+
+  [ Philipp Huebner ]
+  * New upstream version 0.8.1
+  * Add myself to uploaders
+  * Updated Standards-Version: 4.5.0 (no changes needed)
+  * Add "Rules-Requires-Root: no" to debian/control
+  * Set Testsuite: autopkgtest-pkg-python in debian/control
+  * Install examples
+
+ -- Philipp Huebner <debalance@debian.org>  Wed, 29 Apr 2020 11:12:39 +0200
+
+python-transitions (0.7.2-1) unstable; urgency=medium
+
+  [ Debian Janitor ]
+  * Bump debhelper from old 10 to 12.
+  * Set upstream metadata fields: Bug-Database, Bug-Submit, Repository,
+    Repository-Browse.
+
+  [ Stein Magnus Jodal ]
+  * New upstream release
+
+ -- Stein Magnus Jodal <jodal@debian.org>  Thu, 16 Jan 2020 09:39:00 +0100
+
+python-transitions (0.7.1-1) unstable; urgency=medium
+
+  [ Ondřej Nový ]
+  * Bump Standards-Version to 4.4.1.
+
+  [ Stein Magnus Jodal ]
+  * New upstream release
+  * Switch test runner from nosetests to pytest
+
+ -- Stein Magnus Jodal <jodal@debian.org>  Wed, 25 Dec 2019 13:04:22 +0100
+
+python-transitions (0.6.9-2) unstable; urgency=medium
+
+  * Team upload.
+  * Use debhelper-compat instead of debian/compat.
+  * Bump Standards-Version to 4.4.0.
+  * Drop Python 2 support.
+
+ -- Ondřej Nový <onovy@debian.org>  Thu, 25 Jul 2019 19:59:06 +0200
+
+python-transitions (0.6.9-1) unstable; urgency=medium
+
+  [ Ondřej Nový ]
   * Convert git repository from git-dpm to gbp layout
 
- -- Ondřej Nový <onovy@debian.org>  Wed, 08 Aug 2018 09:10:53 +0200
+  [ Stein Magnus Jodal ]
+  * New upstream release
+  * debian/control
+    - Bump Standards-Version to 4.3.0, no changes required
+  * debian/copyright
+    - Update copyright years
+  * debian/docs
+    - Install readme as docs
+  * debian/patches
+    - Drop patch applied upstream
+
+ -- Stein Magnus Jodal <jodal@debian.org>  Tue, 19 Feb 2019 00:47:26 +0100
 
 python-transitions (0.6.7-1) unstable; urgency=medium
 

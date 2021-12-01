@@ -8,10 +8,9 @@ from threading import Thread
 import logging
 
 from transitions.extensions import MachineFactory
-from transitions.extensions.nesting import NestedState
-from .test_nesting import TestTransitions as TestsNested
+from .test_nesting import TestNestedTransitions as TestsNested
 from .test_core import TestTransitions as TestCore
-from .utils import Stuff, DummyModel, TestContext
+from .utils import Stuff, DummyModel, SomeContext
 
 try:
     from unittest.mock import MagicMock
@@ -28,14 +27,15 @@ def heavy_processing():
 
 
 def heavy_checking():
-    time.sleep(1)
+    time.sleep(0.5)
     return False
 
 
 class TestLockedTransitions(TestCore):
 
     def setUp(self):
-        self.stuff = Stuff(machine_cls=MachineFactory.get_predefined(locked=True))
+        self.machine_cls = MachineFactory.get_predefined(locked=True)
+        self.stuff = Stuff(machine_cls=self.machine_cls)
         self.stuff.heavy_processing = heavy_processing
         self.stuff.machine.add_transition('forward', 'A', 'B', before='heavy_processing')
 
@@ -79,7 +79,6 @@ class TestLockedTransitions(TestCore):
         logger.info('Check if state transition done...')
         # Thread will release lock before Transition is finished
         res = self.stuff.is_D()
-        time.sleep(0.5)
         self.assertTrue(res)
 
     def test_pickle(self):
@@ -171,12 +170,13 @@ class TestMultipleContexts(TestCore):
 
         self.s1 = DummyModel()
 
-        self.c1 = TestContext(event_list=self.event_list)
-        self.c2 = TestContext(event_list=self.event_list)
-        self.c3 = TestContext(event_list=self.event_list)
-        self.c4 = TestContext(event_list=self.event_list)
+        self.c1 = SomeContext(event_list=self.event_list)
+        self.c2 = SomeContext(event_list=self.event_list)
+        self.c3 = SomeContext(event_list=self.event_list)
+        self.c4 = SomeContext(event_list=self.event_list)
 
-        self.stuff = Stuff(machine_cls=MachineFactory.get_predefined(locked=True), extra_kwargs={
+        self.machine_cls = MachineFactory.get_predefined(locked=True)
+        self.stuff = Stuff(machine_cls=self.machine_cls, extra_kwargs={
             'machine_context': [self.c1, self.c2]
         })
         self.stuff.machine.add_model(self.s1, model_context=[self.c3, self.c4])
@@ -215,10 +215,12 @@ class TestMultipleContexts(TestCore):
 class TestLockedHierarchicalTransitions(TestsNested, TestLockedTransitions):
 
     def setUp(self):
-        NestedState.separator = '_'
         states = ['A', 'B', {'name': 'C', 'children': ['1', '2', {'name': '3', 'children': ['a', 'b', 'c']}]},
                   'D', 'E', 'F']
-        self.stuff = Stuff(states, machine_cls=MachineFactory.get_predefined(locked=True, nested=True))
+        self.machine_cls = MachineFactory.get_predefined(locked=True, nested=True)
+        self.state_cls = self.machine_cls.state_cls
+        self.state_cls.separator = '_'
+        self.stuff = Stuff(states, machine_cls=self.machine_cls)
         self.stuff.heavy_processing = heavy_processing
         self.stuff.machine.add_transition('forward', '*', 'B', before='heavy_processing')
 

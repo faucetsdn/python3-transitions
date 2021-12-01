@@ -3,16 +3,17 @@ try:
 except ImportError:
     pass
 
-import warnings
 import sys
 
 from .utils import InheritedStuff
-from .utils import Stuff
+from .utils import Stuff, DummyModel
 
 from functools import partial
 from transitions import Machine, MachineError, State, EventData
 from transitions.core import listify, _prep_ordered_arg
 from unittest import TestCase, skipIf
+import warnings
+import weakref
 
 try:
     from unittest.mock import MagicMock
@@ -32,6 +33,7 @@ class TestTransitions(TestCase):
 
     def setUp(self):
         self.stuff = Stuff()
+        self.machine_cls = Machine
 
     def tearDown(self):
         pass
@@ -52,7 +54,7 @@ class TestTransitions(TestCase):
              }
         ]
         s = Stuff()
-        m = Machine(model=s, states=states, transitions=transitions, initial='State2')
+        m = s.machine_cls(model=s, states=states, transitions=transitions, initial='State2')
         s.advance()
         self.assertEqual(s.message, 'Hello World!')
 
@@ -62,6 +64,20 @@ class TestTransitions(TestCase):
         self.assertEqual(listify((4, 5)), (4, 5))
         self.assertEqual(listify([1, 3]), [1, 3])
 
+        class Foo:
+            pass
+        obj = Foo()
+        proxy = weakref.proxy(obj)
+        del obj
+        self.assertEqual(listify(proxy), [proxy])
+
+    def test_weakproxy_model(self):
+        d = DummyModel()
+        pr = weakref.proxy(d)
+        self.machine_cls(pr, states=['A', 'B'], transitions=[['go', 'A', 'B']], initial='A')
+        pr.go()
+        self.assertTrue(pr.is_B())
+
     def test_property_initial(self):
         states = ['A', 'B', 'C', 'D']
         # Define with list of dictionaries
@@ -70,11 +86,11 @@ class TestTransitions(TestCase):
             {'trigger': 'run', 'source': 'B', 'dest': 'C'},
             {'trigger': 'sprint', 'source': 'C', 'dest': 'D'}
         ]
-        m = Machine(states=states, transitions=transitions, initial='A')
+        m = self.stuff.machine_cls(states=states, transitions=transitions, initial='A')
         self.assertEqual(m.initial, 'A')
-        m = Machine(states=states, transitions=transitions, initial='C')
+        m = self.stuff.machine_cls(states=states, transitions=transitions, initial='C')
         self.assertEqual(m.initial, 'C')
-        m = Machine(states=states, transitions=transitions)
+        m = self.stuff.machine_cls(states=states, transitions=transitions)
         self.assertEqual(m.initial, 'initial')
 
     def test_transition_definitions(self):
@@ -98,6 +114,14 @@ class TestTransitions(TestCase):
         m.to_C()
         m.sprint()
         self.assertEqual(m.state, 'D')
+
+    def test_add_states(self):
+        s = self.stuff
+        s.machine.add_state('X')
+        s.machine.add_state('Y')
+        s.machine.add_state('Z')
+        event = s.machine.events['to_{0}'.format(s.state)]
+        self.assertEqual(1, len(event.transitions['X']))
 
     def test_transitioning(self):
         s = self.stuff
@@ -140,6 +164,14 @@ class TestTransitions(TestCase):
         self.assertEqual(s.state, 'C')
         s.advance()
         self.assertEqual(s.state, 'C')
+
+    def test_uncallable_callbacks(self):
+        s = self.stuff
+        s.machine.add_transition('advance', 'A', 'B', conditions=['property_that_fails', 'is_false'])
+        # make sure parameters passed by trigger events can be handled
+        s.machine.add_transition('advance', 'A', 'C', before=['property_that_fails', 'is_false'])
+        s.advance(level='MaximumSpeed')
+        self.assertTrue(s.is_C())
 
     def test_conditions_with_partial(self):
         def check(result):
@@ -375,6 +407,17 @@ class TestTransitions(TestCase):
         m.next_state()
         self.assertEqual(m.state, 'beginning')
 
+        # Partial state machine without the initial state
+        m = Machine('self', states, initial='beginning')
+        m.add_ordered_transitions(['middle', 'end'])
+        self.assertEqual(m.state, 'beginning')
+        with self.assertRaises(MachineError):
+            m.next_state()
+        m.to_middle()
+        for s in ('end', 'middle', 'end'):
+            m.next_state()
+            self.assertEqual(m.state, s)
+
     def test_ordered_transition_error(self):
         m = Machine(states=['A'], initial='A')
         with self.assertRaises(ValueError):
@@ -394,11 +437,15 @@ class TestTransitions(TestCase):
                      initial='B')
         with self.assertRaises(MachineError):
             m1.a_to_b()
+        # Set default value on machine level
+        m2 = Machine('self', states=[a_state, b_state], transitions=transitions,
+                     initial='B', ignore_invalid_triggers=True)
+        m2.a_to_b()
         # Exception is suppressed, so this passes
         b_state = State('B', ignore_invalid_triggers=True)
-        m2 = Machine('self', states=[a_state, b_state], transitions=transitions,
+        m3 = Machine('self', states=[a_state, b_state], transitions=transitions,
                      initial='B')
-        m2.a_to_b()
+        m3.a_to_b()
         # Set for some states but not others
         new_states = ['C', 'D']
         m1.add_states(new_states, ignore_invalid_triggers=True)
@@ -407,9 +454,9 @@ class TestTransitions(TestCase):
         m1.to_B()
         with self.assertRaises(MachineError):
             m1.a_to_b()
-        # Set at machine level
+        # State value overrides machine behaviour
         m3 = Machine('self', states=[a_state, b_state], transitions=transitions,
-                     initial='B', ignore_invalid_triggers=True)
+                     initial='B', ignore_invalid_triggers=False)
         m3.a_to_b()
 
     def test_string_callbacks(self):
@@ -575,11 +622,9 @@ class TestTransitions(TestCase):
         def after_change(machine):
             machine.to_C(machine)
 
-        def failed_transition(machine):
-            raise ValueError('Something was wrong')
-
         states = ['A', 'B', 'C']
-        transitions = [{'trigger': 'do', 'source': '*', 'dest': 'C', 'before': failed_transition}]
+        transitions = [{'trigger': 'do', 'source': '*', 'dest': 'C',
+                        'before': partial(self.stuff.this_raises, ValueError)}]
         m = Machine(states=states, transitions=transitions, queued=True,
                     before_state_change=before_change, after_state_change=after_change)
         with self.assertRaises(MachineError):
@@ -588,8 +633,48 @@ class TestTransitions(TestCase):
         with self.assertRaises(ValueError):
             m.do(machine=m)
 
+    def test_queued_remove(self):
+        m = self.machine_cls(model=None, states=['A', 'B', 'C'], initial='A', queued=True)
+        assert_equal = self.assertEqual
+
+        class BaseModel:
+            def on_enter_A(self):
+                pass
+
+            def on_enter_B(self):
+                pass
+
+            def on_enter_C(self):
+                pass
+
+        class SubModel(BaseModel):
+            def __init__(self):
+                self.inner = BaseModel()
+
+            def on_enter_A(self):
+                self.to_B()
+                self.inner.to_B()
+
+            def on_enter_B(self):
+                self.to_C()
+                self.inner.to_C()
+                # queue should contain to_B(), inner.to_B(), to_C(), inner.to_C()
+                assert_equal(4, len(m._transition_queue))
+                m.remove_model(self)
+                # since to_B() is currently executed it should still be in the list, to_C should be gone
+                assert_equal(3, len(m._transition_queue))
+
+            def on_enter_C(self):
+                raise RuntimeError("Event was not cancelled")
+        model = SubModel()
+        m.add_model([model, model.inner])
+        model.to_A()
+        # test whether models can be removed outside event queue
+        m.remove_model(model.inner)
+        self.assertTrue(model.inner.is_C())
+
     def test___getattr___and_identify_callback(self):
-        m = Machine(Stuff(), states=['A', 'B', 'C'], initial='A')
+        m = self.machine_cls(Stuff(), states=['A', 'B', 'C'], initial='A')
         m.add_transition('move', 'A', 'B')
         m.add_transition('move', 'B', 'C')
 
@@ -713,7 +798,7 @@ class TestTransitions(TestCase):
 
         # An invalid transition shouldn't execute the callback
         with self.assertRaises(MachineError):
-                m.model.on_exit_A()
+            m.model.on_exit_A()
 
     def test_process_trigger(self):
         m = Machine(states=['raw', 'processed'], initial='raw')
@@ -750,6 +835,12 @@ class TestTransitions(TestCase):
         self.assertEqual(s1.state, 'B')
         self.assertEqual(s2.state, 'C')
 
+    def test_remove_model(self):
+        m = self.machine_cls()
+        self.assertIn(m, m.models)
+        m.remove_model(m)
+        self.assertNotIn(m, m.models)
+
     def test_string_trigger(self):
         def return_value(value):
             return value
@@ -767,10 +858,23 @@ class TestTransitions(TestCase):
         self.assertTrue(self.stuff.is_A())
         with self.assertRaises(AttributeError):
             self.stuff.trigger('not_available')
+        with self.assertRaises(MachineError):
+            self.stuff.trigger('maybe')
 
         model = Model()
         m = Machine(model=model)
         self.assertEqual(model.trigger(5), 5)
+        self.stuff.machine.add_transition('do_raise_keyerror', '*', 'C',
+                                          before=partial(self.stuff.this_raises, KeyError))
+        with self.assertRaises(KeyError):
+            self.stuff.trigger('do_raise_keyerror')
+
+        self.stuff.machine.get_model_state(self.stuff).ignore_invalid_triggers = True
+        self.stuff.trigger('should_not_raise_anything')
+        self.stuff.trigger('to_A')
+        self.assertTrue(self.stuff.is_A())
+        self.stuff.machine.ignore_invalid_triggers = True
+        self.stuff.trigger('should_not_raise_anything')
 
     def test_get_triggers(self):
         states = ['A', 'B', 'C']
@@ -782,7 +886,30 @@ class TestTransitions(TestCase):
         self.assertEqual(len(machine.get_triggers('B')), 0)
         self.assertEqual(len(machine.get_triggers('C')), 1)
         # self stuff machine should have to-transitions to every state
-        self.assertEqual(len(self.stuff.machine.get_triggers('B')), len(self.stuff.machine.states))
+        m = self.stuff.machine
+        self.assertEqual(len(m.get_triggers('B')), len(m.states))
+        trigger_name = m.get_triggers('B')
+        trigger_state = m.get_triggers(m.states['B'])
+        self.assertEqual(trigger_name, trigger_state)
+
+    def test_skip_override(self):
+        local_mock = MagicMock()
+
+        class Model(object):
+
+            def go(self):
+                local_mock()
+        model = Model()
+        transitions = [['go', 'A', 'B'], ['advance', 'A', 'B']]
+        m = self.stuff.machine_cls(model=model, states=['A', 'B'], transitions=transitions, initial='A')
+        model.go()
+        self.assertEqual(model.state, 'A')
+        self.assertTrue(local_mock.called)
+        model.advance()
+        self.assertEqual(model.state, 'B')
+        model.to_A()
+        model.trigger('go')
+        self.assertEqual(model.state, 'B')
 
     @skipIf(sys.version_info < (3, ),
             "String-checking disabled on PY-2 because is different")
@@ -853,13 +980,11 @@ class TestTransitions(TestCase):
         def always_fails(event_data):
             return False
 
-        def always_raises(event_data):
-            raise Exception()
-
         transitions = [
             {'trigger': 'go', 'source': 'A', 'dest': 'B'},
             {'trigger': 'planA', 'source': 'B', 'dest': 'A', 'conditions': always_fails},
-            {'trigger': 'planB', 'source': 'B', 'dest': 'A', 'conditions': always_raises}
+            {'trigger': 'planB', 'source': 'B', 'dest': 'A',
+             'conditions': partial(self.stuff.this_raises, RuntimeError)}
         ]
         m = self.stuff.machine_cls(states=['A', 'B'], transitions=transitions,
                                    finalize_event=finalize_mock, initial='A', send_event=True)
@@ -872,22 +997,23 @@ class TestTransitions(TestCase):
         self.assertIsInstance(event_data, EventData)
         self.assertEqual(finalize_mock.call_count, 2)
         self.assertFalse(event_data.result)
-        with self.assertRaises(Exception):
+        with self.assertRaises(RuntimeError):
             m.planB()
-        self.assertEqual(finalize_mock.call_count, 3)
+
+        m.finalize_event.append(partial(self.stuff.this_raises, ValueError))
+        # ValueError in finalize should be suppressed
+        # but mock should have been called anyway
+        with self.assertRaises(RuntimeError):
+            m.planB()
+        self.assertEqual(finalize_mock.call_count, 4)
 
     def test_machine_finalize_exception(self):
 
-        exception = ZeroDivisionError()
-
-        def always_raises(event):
-            raise exception
-
         def finalize_callback(event):
-            self.assertEqual(event.error, exception)
+            self.assertIsInstance(event.error, ZeroDivisionError)
 
         m = self.stuff.machine_cls(states=['A', 'B'], send_event=True, initial='A',
-                                   before_state_change=always_raises,
+                                   before_state_change=partial(self.stuff.this_raises, ZeroDivisionError),
                                    finalize_event=finalize_callback)
 
         with self.assertRaises(ZeroDivisionError):
@@ -937,7 +1063,7 @@ class TestTransitions(TestCase):
 
     def test_get_transitions(self):
         states = ['A', 'B', 'C', 'D']
-        m = Machine('self', states, initial='a', auto_transitions=False)
+        m = self.machine_cls('self', states, initial='A', auto_transitions=False)
         m.add_transition('go', ['A', 'B', 'C'], 'D')
         m.add_transition('run', 'A', 'D')
         self.assertEqual(
@@ -947,6 +1073,18 @@ class TestTransitions(TestCase):
             [(t.source, t.dest)
              for t in m.get_transitions(source='A', dest='D')],
             [('A', 'D'), ('A', 'D')])
+        self.assertEqual(
+            sorted([(t.source, t.dest)
+                    for t in m.get_transitions(dest='D')]),
+            [('A', 'D'), ('A', 'D'), ('B', 'D'), ('C', 'D')])
+        self.assertEqual(
+            [(t.source, t.dest)
+             for t in m.get_transitions(source=m.states['A'], dest=m.states['D'])],
+            [('A', 'D'), ('A', 'D')])
+        self.assertEqual(
+            sorted([(t.source, t.dest)
+                    for t in m.get_transitions(dest=m.states['D'])]),
+            [('A', 'D'), ('A', 'D'), ('B', 'D'), ('C', 'D')])
 
     def test_remove_transition(self):
         self.stuff.machine.add_transition('go', ['A', 'B', 'C'], 'D')
@@ -988,19 +1126,114 @@ class TestTransitions(TestCase):
         self.assertEqual(m.model.state, 'A')
         self.assertEqual(m.model.level, 2)
 
+    def test_dynamic_model_state_attribute(self):
+        class Model:
+            def __init__(self):
+                self.status = None
+                self.state = 'some_value'
+
+        m = self.machine_cls(Model(), states=['A', 'B'], initial='A', model_attribute='status')
+        self.assertEqual(m.model.status, 'A')
+        self.assertEqual(m.model.state, 'some_value')
+
+        m.add_transition('move', 'A', 'B')
+        m.model.move()
+
+        self.assertEqual(m.model.status, 'B')
+        self.assertEqual(m.model.state, 'some_value')
+
+    def test_multiple_machines_per_model(self):
+        class Model:
+            def __init__(self):
+                self.car_state = None
+                self.driver_state = None
+
+        instance = Model()
+        machine_a = Machine(instance, states=['A', 'B'], initial='A', model_attribute='car_state')
+        machine_a.add_transition('accelerate_car', 'A', 'B')
+        machine_b = Machine(instance, states=['A', 'B'], initial='B', model_attribute='driver_state')
+        machine_b.add_transition('driving', 'B', 'A')
+
+        assert instance.car_state == 'A'
+        assert instance.driver_state == 'B'
+        assert instance.is_car_state_A()
+        assert instance.is_driver_state_B()
+
+        instance.accelerate_car()
+        assert instance.car_state == 'B'
+        assert instance.driver_state == 'B'
+        assert not instance.is_car_state_A()
+        assert instance.is_car_state_B()
+
+        instance.driving()
+        assert instance.driver_state == 'A'
+        assert instance.car_state == 'B'
+        assert instance.is_driver_state_A()
+        assert not instance.is_driver_state_B()
+        assert instance.to_driver_state_B()
+        assert instance.driver_state == 'B'
+
+    def test_initial_not_registered(self):
+        m1 = self.machine_cls(states=['A', 'B'], initial=self.machine_cls.state_cls('C'))
+        self.assertTrue(m1.is_C())
+        self.assertTrue('C' in m1.states)
+
+    def test_trigger_name_cannot_be_equal_to_model_attribute(self):
+        m = self.machine_cls(states=['A', 'B'])
+
+        with self.assertRaises(ValueError):
+            m.add_transition(m.model_attribute, "A", "B")
+
+    def test_new_state_in_enter_callback(self):
+
+        machine = self.machine_cls(states=['A', 'B'], initial='A')
+
+        def on_enter_B():
+            state = self.machine_cls.state_cls(name='C')
+            machine.add_state(state)
+            machine.to_C()
+
+        machine.on_enter_B(on_enter_B)
+        machine.to_B()
+
+    def test_on_exception_callback(self):
+        mock = MagicMock()
+
+        def on_exception(event_data):
+            self.assertIsInstance(event_data.error, ValueError)
+            mock()
+
+        m = self.machine_cls(states=['A', 'B'], initial='A', send_event=True,
+                             after_state_change=partial(self.stuff.this_raises, ValueError))
+        with self.assertRaises(ValueError):
+            m.to_B()
+
+        m.on_exception.append(on_exception)
+        m.to_B()
+        self.assertTrue(mock.called)
+
 
 class TestWarnings(TestCase):
+    def test_multiple_machines_per_model(self):
+        class Model:
+            def __init__(self):
+                self.car_state = None
+                self.driver_state = None
 
-    def test_warning(self):
-        import sys
-        # does not work with python 3.3. However, the warning is shown when Machine is initialized manually.
-        if (3, 3) <= sys.version_info < (3, 4):
-            return
+        instance = Model()
 
         with warnings.catch_warnings(record=True) as w:
-            warnings.filterwarnings(action='default', message=r"Starting from transitions version 0\.6\.0 .*")
-            m = Machine(None)
-            m = Machine(add_self=False)
-            self.assertEqual(len(w), 1)
-            for warn in w:
-                self.assertEqual(warn.category, DeprecationWarning)
+            warnings.filterwarnings(action='default', message=r".*transitions version.*", category=DeprecationWarning)
+
+            machine_a = Machine(instance, states=['A', 'B'], initial='A', model_attribute='car_state')
+            machine_b = Machine(instance, states=['A', 'B'], initial='B', model_attribute='driver_state')
+            self.assertEqual(0, len(w))
+            self.assertTrue(instance.is_A())
+            self.assertTrue(instance.is_A())
+            self.assertEqual(1, len(w))
+            self.assertEqual(w[0].category, DeprecationWarning)
+            instance.to_B()
+            self.assertEqual('B', instance.car_state)
+            self.assertFalse(instance.is_A())
+            self.assertEqual(2, len(w))
+            self.assertEqual(w[1].category, DeprecationWarning)
